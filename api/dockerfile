@@ -1,0 +1,8 @@
+FROM python:3.11.7-alpine
+WORKDIR /api
+COPY ./requirements.txt /api/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /api/requirements.txt
+# RUN pip install fastapi[all]
+EXPOSE 50505
+COPY . /api
+CMD ["python3", "./main.py"]
