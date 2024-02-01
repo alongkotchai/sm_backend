@@ -28,7 +28,7 @@ services:
     container_name: api
     build: ./api
     volumes:
-      - api_static:/api/static
+      - ./api/static:/api/static
     ports:
       - "50505:50505"
     links:
@@ -42,4 +42,3 @@ services:
 
 volumes:
   mysql-data:
-  api_static:
