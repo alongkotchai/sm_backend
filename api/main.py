@@ -1,6 +1,8 @@
+import os
 import time
 import logging
 from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,7 +18,11 @@ from database import (
     engine)
 from controllers import (
     auth,
-    users)
+    users,
+    tasks,
+    info,
+    results,
+    models as model)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +82,10 @@ app.add_middleware(
 # # service rounters
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(model.router)
+app.include_router(tasks.router)
+app.include_router(results.router)
+app.include_router(info.router)
 
 
 # override exception error response
@@ -119,9 +129,13 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
+app.mount("/images", StaticFiles(
+    directory=os.path.join(os.getcwd(), "static", "images")),
+    name="static")
 
 if __name__ == "__main__":
     # start serving
+    time.sleep(3)
     uvicorn.run('main:app',
                 host=str(setting.SERVICE_HOST),
                 port=setting.SERVICE_PORT,
