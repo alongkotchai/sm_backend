@@ -8,31 +8,33 @@ from pydantic import (
     ConfigDict,
     field_validator)
 from core.security import Role
+from schemas.base import (
+    InputModel,
+    OutputModel,
+    BaseList)
 import utils
 
 
-class UserCreate(BaseModel):
-    email: EmailStr = Field()
-    password: str = Field(min_length=8, max_length=64)
+class UserCreate(InputModel):
+    email: EmailStr = Field(max_length=64)
+    password: str = Field(min_length=8,
+                          max_length=64)
     role: Role = Field(Role.USER)
-    is_activate: bool = Field(False)
+    is_active: bool = Field(False)
 
     @field_validator('password')
     def validate_pass(cls, password: str):
         utils.validate_pass(password)
         return password
 
-    model_config = ConfigDict(
-        str_strip_whitespace=True)
 
-
-class UserModify(UserCreate):
+class UserModify(InputModel):
     email: Optional[EmailStr] = Field(None)
     password: Optional[str] = Field(None,
                                     min_length=8,
                                     max_length=64)
     role: Optional[Role] = Field(None)
-    is_activate: Optional[bool] = Field(None)
+    is_active: Optional[bool] = Field(None)
 
     @field_validator('password')
     def validate_pass(cls, password: str):
@@ -42,36 +44,25 @@ class UserModify(UserCreate):
         return password
 
 
-class UserDisplay(BaseModel):
-    id: UUID = Field()
-    email: EmailStr = Field()
-    last_login: Optional[datetime] = Field(None)
-    create_at: datetime = Field()
-    role: Role = Field(Role.USER)
-    is_activate: bool = Field(False)
-
-    model_config = ConfigDict(
-        from_attributes=True)
+class UserDisplay(OutputModel):
+    uid: UUID
+    email: EmailStr
+    last_login: Optional[datetime]
+    create_at: datetime
+    role: Role
+    is_active: bool
 
 
-class UserList(BaseModel):
+class UserList(BaseList):
     users: list[UserDisplay]
 
-    model_config = ConfigDict(
-        from_attributes=True)
+
+class UserLogin(InputModel):
+    email: EmailStr = Field(max_length=64)
+    password: str = Field(min_length=8,
+                          max_length=64)
 
 
-class UserLogin(BaseModel):
-    email: EmailStr = Field()
-    password: str = Field(min_length=8, max_length=64)
-
-    model_config = ConfigDict(
-        str_strip_whitespace=True)
-
-
-class UserContext(BaseModel):
+class UserContext(OutputModel):
     user: UserDisplay
     access_token: str
-
-    model_config = ConfigDict(
-        from_attributes=True)
