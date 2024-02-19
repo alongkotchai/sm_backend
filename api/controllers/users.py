@@ -5,6 +5,12 @@ from fastapi import (
     HTTPException,
     status,
     Depends)
+from sqlalchemy import (
+    func,
+    desc,
+    select,
+    update,
+    delete)
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession)
@@ -15,6 +21,9 @@ from core.security import (
     hash_password)
 from database.models import User
 from database import crud
+from schemas.base import (
+    QueryBase,
+    last_page)
 from schemas.users import (
     UserDisplay,
     UserModify,
@@ -29,31 +38,57 @@ router = APIRouter(prefix='/users')
 
 @router.get('', response_model=UserList)
 async def get_users(
+    q: QueryBase = Depends(),
     auth_context: AuthContext = Depends(get_auth),
     async_session: async_sessionmaker[
         AsyncSession] = Depends(get_session)
 ):
     if auth_context.role != Role.ADMIN:
-        return {'users': []}
+        return UserList(page_number=q.page,
+                        page_size=q.size,
+                        last_page=1,
+                        count=0,
+                        users=[])
 
-    return {'users': await crud.read_list_entity(async_session, User)}
+    async with async_session() as session:
+        users = (await session.execute(
+            select(User,
+                   func.count(User.uid).
+                   over().
+                   label('total')).
+            order_by(desc(User.create_at)
+                     if q.desc
+                     else User.create_at).
+            offset((q.page - 1) * q.size).
+            limit(q.size)
+        )).all()
+
+    count = users[0].total if users else 0
+    users = [user.User for user in users]
+
+    return UserList(page_number=q.page,
+                    page_size=q.size,
+                    last_page=last_page(count, q.size),
+                    count=count,
+                    users=users)
 
 
-@router.get('/{id}', response_model=UserDisplay)
+@router.get('/{uid}', response_model=UserDisplay)
 async def get_user(
-    id: UUID,
+    uid: UUID,
     auth_context: AuthContext = Depends(get_auth),
     async_session: async_sessionmaker[
         AsyncSession] = Depends(get_session)
 ):
-    user = await crud.read_entity(async_session, id, User)
+    async with async_session() as session:
+        user = await session.get(User, uid)
 
-    if not user or \
-            (auth_context.role != Role.ADMIN
-             and auth_context.sub != id):
+    if not user \
+        or (auth_context.role != Role.ADMIN
+            and auth_context.sub != uid):
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail='User Not Found')
+            detail=f'User :{uid} Not Found')
 
     return user
 
@@ -73,62 +108,83 @@ async def create_user(
     temp = User(**user.model_dump())
     temp.create_at = datetime.now()
     temp.password = hash_password(temp.password)
-    temp.id = uuid4()
+    temp.uid = uuid4()
 
-    try:
-        return await crud.create_entity(async_session, temp)
-    except IntegrityError:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail='email is already in used')
+    async with async_session() as session:
+        session.add(temp)
+        try:
+            await session.commit()
+            await session.refresh(temp)
+        except IntegrityError:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail='email is already in used')
+
+    return temp
 
 
-@router.put('/{id}', response_model=UserDisplay)
+@router.put('/{uid}', response_model=UserDisplay)
 async def update_user(
-    id: UUID,
+    uid: UUID,
     user: UserModify,
     auth_context: AuthContext = Depends(get_auth),
     async_session: async_sessionmaker[
         AsyncSession] = Depends(get_session)
 ):
-    res = await crud.read_entity(async_session, id, User)
 
-    if not res or \
-            (auth_context.role != Role.ADMIN
-             and auth_context.sub != id):
+    if (auth_context.role != Role.ADMIN
+            and auth_context.sub != uid):
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail='User Not Found')
+            detail='User Not Found (1)')
 
-    try:
-        return await crud.update_entity(async_session,
-                                        id,
-                                        user.model_dump(exclude_none=True),
-                                        User)
-    except IntegrityError:
+    async with async_session() as session:
+
+        try:
+            res = (await session.execute(
+                update(User).
+                where(User.uid == str(uid)).
+                values(**user.model_dump(exclude_none=True))
+            )).rowcount
+            await session.commit()
+            temp = await session.get(User, uid)
+        except IntegrityError:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail='email is already in used')
+
+    if not (temp and res):
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail='email is already in used')
+            status.HTTP_404_NOT_FOUND,
+            detail='User Not Found (2)')
+
+    return temp
 
 
-@router.delete('/{id}')
+@router.delete('/{uid}')
 async def update_user(
-    id: UUID,
+    uid: UUID,
     auth_context: AuthContext = Depends(get_auth),
     async_session: async_sessionmaker[
         AsyncSession] = Depends(get_session)
 ):
 
-    if auth_context.role != Role.ADMIN:
+    if auth_context.role != Role.ADMIN \
+            or uid == auth_context.sub:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail='UNAUTHORIZED')
 
-    res = await crud.delete_entity(async_session, id, User)
-    if not res:
+    async with async_session() as session:
+        res = (await session.execute(
+            delete(User).
+            where(User.uid == str(uid))
+        ))
+        await session.commit()
+    if not res.rowcount:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail='User Not Found')
+            detail=f'User :{uid} Not Found')
     return {'success': True}
 
 
@@ -138,10 +194,10 @@ async def __create_default_user(
                                UUID(int=0),
                                User)):
         return
-    user = User(id=UUID(int=0),
+    user = User(uid=UUID(int=0),
                 email='admin@admin.com',
                 password=hash_password("password"),
                 role=Role.ADMIN,
                 create_at=datetime.now(),
-                is_activate=True)
+                is_active=True)
     await crud.create_entity(async_session, user)

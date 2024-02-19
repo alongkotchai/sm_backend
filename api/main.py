@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import pathlib
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -23,15 +24,18 @@ from controllers import (
     info,
     results,
     models as model)
+from workers import (
+    file_handler)
 
 logger = logging.getLogger(__name__)
+
+BASE_PATH = pathlib.Path(__file__).parent.resolve()
 
 
 async def setup_db() -> None:
     """
         Initial databases connection session
     """
-
     async_eng, async_session = await engine.init_engine(str(setting.MYSQL_DSN))
 
     logger.info("Starting MySql connection")
@@ -51,6 +55,27 @@ async def init_root_user() -> None:
     await users.__create_default_user(engine.async_session)
 
 
+async def setup_file_handler() -> None:
+
+    file_handler.OUTPUT_PATH = os.path.join(
+        BASE_PATH, 'static', 'images', 'output')
+    file_handler.INPUT_PATH = os.path.join(
+        BASE_PATH, 'static', 'images', 'input')
+
+    if not os.path.exists(file_handler.OUTPUT_PATH):
+        os.mkdir(file_handler.OUTPUT_PATH)
+    if not os.path.exists(file_handler.INPUT_PATH):
+        os.mkdir(file_handler.INPUT_PATH)
+
+
+async def setup_default_model() -> None:
+
+    await model.create_default(
+        os.path.join(
+            BASE_PATH, 'static'),
+        engine.async_session)
+
+
 async def close_db_connection() -> None:
     """
         Dispose engine
@@ -65,7 +90,10 @@ async def lifespan(app: FastAPI):
     # run before api service start
     await setup_db()
     await init_root_user()
+    await setup_file_handler()
+
     yield
+
     # run after service closing
     await close_db_connection()
 
@@ -130,14 +158,13 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 app.mount("/images", StaticFiles(
-    directory=os.path.join(os.getcwd(), "static", "images")),
+    directory=os.path.join(BASE_PATH, "static", "images")),
     name="static")
 
 if __name__ == "__main__":
     # start serving
     time.sleep(3)
-    uvicorn.run('main:app',
+    uvicorn.run(app,
                 host=str(setting.SERVICE_HOST),
                 port=setting.SERVICE_PORT,
-                log_config="./static/logs/log_conf.yml",
-                reload=True)
+                log_config="./static/logs/log_conf.yml")

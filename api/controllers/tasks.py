@@ -1,144 +1,339 @@
+from uuid import (
+    uuid4,
+    UUID)
+import base64
+from datetime import datetime
 from fastapi import (
     APIRouter,
     HTTPException,
     status,
     Depends)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncSession)
+from sqlalchemy import (
+    select,
+    delete,
+    update,
+    func,
+    desc)
+from core.security import (
+    AuthContext,
+    Role)
+from database.models import (
+    Tasks,
+    Input)
+from workers.file_handler import (
+    delete_input_from_list,
+    delete_task_folder,
+    write_input_from_list)
+from schemas.base import (
+    ConfirmRes,
+    last_page,
+    QueryBase,
+    TaskStatus,
+    TaskType)
+from schemas.tasks import (
+    TaskCreate,
+    TaskDisplay,
+    TaskList,
+    TaskModify)
+from depends import (
+    get_auth,
+    get_session)
 
-from utils import random_string
-from uuid import uuid4, UUID
+
 router = APIRouter(prefix='/tasks')
 
 
-@router.get("")
-def get_tasks():
-    return {
-        "tasks": [
-            {"id": uuid4(),
-             "name": "T1",
-             "user_id": uuid4(),
-             "number_input": 20,
-             "processed": 20,
-             "start_time": "2024-01-26T23:30:11",
-             "finish_time": "2024-01-26T23:32:11",
-             "task_type": "batch",
-             "status": "finish",
-             "input_list": [
-                 random_string(5) + ".png" for i in range(20)
-            ]},
-            {"id": uuid4(),
-             "name": "T2",
-             "user_id": uuid4(),
-             "number_input": 33,
-             "processed": 10,
-             "start_time": "2024-01-26T23:30:11",
-             "finish_time": None,
-             "task_type": "batch",
-             "status": "running",
-             "input_list": [
-                 random_string(5) + ".png" for i in range(33)
-            ]},
-            {"id": uuid4(),
-             "name": "T3",
-             "user_id": uuid4(),
-             "number_input": 16,
-             "processed": 0,
-             "start_time": "2024-01-26T23:30:11",
-             "finish_time": None,
-             "task_type": "batch",
-             "status": "wating",
-             "input_list": [
-                 random_string(5) + ".png" for i in range(16)
-            ]},
-            {"id": UUID(int=1231231),
-             "name": "T4",
-             "user_id": uuid4(),
-             "number_input": 1,
-             "processed": 0,
-             "start_time": None,
-             "finish_time": None,
-             "task_type": "batch",
-             "status": "created",
-             "input_list": [
-                 "abcde.png"
-            ]}
-        ]
-    }
+@router.get("", response_model=TaskList)
+async def get_tasks(
+    q: QueryBase = Depends(),
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    stmt = select(Tasks,
+                  func.count(Tasks.uid).
+                  over().
+                  label('total'))
+    if auth_context.role == Role.USER:
+        stmt = stmt.where(Tasks.uid == str(auth_context.sub))
+
+    async with async_session() as session:
+        res = (await session.execute(
+            stmt.order_by(desc(Tasks.create_at)
+                          if q.desc
+                          else Tasks.create_at).
+            offset((q.page - 1) * q.size).
+            limit(q.size)
+        )).all()
+        tids = [row.Tasks.tid for row in res]
+        ires = (await session.execute(
+            select(Input).where(Input.tid.in_(tids))
+        )).all()
+
+    count = res[0].total if res else 0
+
+    tasks_dict: dict[UUID, int] = {}
+    tasks: list[Tasks] = []
+    for i, row in enumerate(res):
+        setattr(row.Tasks, 'number_of_input', 0)
+        setattr(row.Tasks, 'input_list', [])
+        tasks.append[row.Tasks]
+        tasks_dict[row.Tasks.tid] = i
+
+    for row in ires:
+        if row.Input.tid not in tasks_dict:
+            continue
+        idx = tasks_dict[row.Input.tid]
+        tasks[idx].number_of_input += 1
+        tasks[idx].input_list.append(
+            {row.Input.index: row.Input.source_ref})
+
+    return TaskList(page_number=q.page,
+                    page_size=q.size,
+                    last_page=last_page(count, q.size),
+                    count=count,
+                    tasks=tasks)
 
 
-@router.get("/{id}")
-def get_one_tasks(id: UUID):
-    return {
-        "id": id,
-        "name": "T99",
-        "user_id": uuid4(),
-        "number_input": 1,
-        "processed": 0,
-        "start_time": None,
-        "finish_time": None,
-        "task_type": "batch",
-        "status": "created",
-        "input_list": [
-            "abcde.png"
-        ]
-    }
+@router.get("/{tid}", response_model=TaskDisplay)
+async def get_one_tasks(
+    tid: UUID,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    async with async_session() as session:
+        res = await session.get(Tasks, tid)
+
+        if not res \
+            or (auth_context.role != Role.ADMIN
+                and auth_context.sub != res.uid):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f'Task :{tid} Not Found')
+
+        ires = (await session.execute(
+            select(Input).where(Input.tid == str(tid))
+        )).scalars().all()
+
+    setattr(res, 'number_of_input', len(ires))
+    setattr(res, 'input_list', ires)
+
+    return res
 
 
-@router.post("")
-def post_tasks():
-    return {"id": uuid4(),
-            "name": "T7",
-            "user_id": uuid4(),
-            "number_input": 3,
-            "processed": 0,
-            "start_time": None,
-            "finish_time": None,
-            "task_type": "batch",
-            "status": "create",
-            "input_list": [
-        "abcde.png",
-        "abcdf.png",
-        "abcdg.png",
-    ]}
+@router.post("", response_model=TaskDisplay)
+async def post_tasks(
+    task: TaskCreate,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    tid = uuid4()
+    temp = Tasks(**task.model_dump(exclude='input_list'),
+                 tid=tid,
+                 uid=auth_context.sub,
+                 create_at=datetime.now(),
+                 status=TaskStatus.CREATE)
+
+    input_list: list[Input] = []
+    files_list: list[tuple[bytes, str]] = []
+
+    for i, s in enumerate(task.input_list):
+        try:
+            data, fname = __prepare_image(s, i)
+        except ValueError:
+            continue
+        files_list.append((data, fname))
+        input_list.append(Input(tid=tid,
+                                index=i,
+                                source_ref=fname))
+
+    async with async_session() as session:
+        try:
+            session.add(temp)
+            session.add_all(input_list)
+            await session.commit()
+            await session.refresh(temp)
+        except IntegrityError:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail='connot create task')
+
+        ires = (await session.execute(
+            select(Input).where(Input.tid == str(temp.tid))
+        )).scalars().all()
+
+    setattr(temp, 'number_of_input', len(ires))
+    setattr(temp, 'input_list', ires)
+
+    await write_input_from_list(tid, files_list)
+
+    return temp
 
 
-@router.delete("/{id}")
-def delete_tasks(id: UUID):
+@router.delete("/{tid}", response_model=ConfirmRes)
+async def delete_tasks(
+    tid: UUID,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    async with async_session() as session:
+        task = await session.get(Tasks, tid)
+
+        if task.status in (TaskStatus.RUN, TaskStatus.WAIT):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f'Task :{tid} is processing')
+
+        if not task \
+            or (auth_context.role != Role.ADMIN
+                and auth_context.sub != task.uid):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f'Task :{tid} Not Found')
+
+        await session.execute(
+            delete(Input).
+            where(Input.tid == str(tid)))
+
+        await session.execute(
+            delete(Tasks).
+            where(Tasks.tid == str(tid)))
+
+        await session.commit()
+
+    delete_task_folder(tid)
+
+    return ConfirmRes(success=True)
+
+
+@router.put("/{tid}")
+async def put_tasks(
+    tid: UUID,
+    task: TaskModify,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    update_dict = task.model_dump(
+        exclude=['input_to_remove', 'input_to_add'])
+
+    input_list: list[Input] = []
+    files_list: list[tuple[bytes, str]] = []
+    rm_list: list[str] = []
+
+    async with async_session() as session:
+        res = await session.get(Tasks, tid)
+
+        if res.status in (TaskStatus.RUN, TaskStatus.WAIT):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f'Task :{tid} is processing')
+
+        if not res \
+            or (auth_context.role != Role.ADMIN
+                and auth_context.sub != res.uid):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f'Task :{tid} Not Found')
+
+        m = (await session.execute(
+            select(func.max(Input.index)).
+            where(Input.tid == str(tid))
+        )).scalar_one()
+
+        for i, s in enumerate(task.input_to_add):
+            try:
+                data, fname = __prepare_image(s, i+m)
+            except ValueError:
+                continue
+            files_list.append((data, fname))
+            input_list.append(Input(tid=tid,
+                                    index=i+m,
+                                    source_ref=fname))
+
+        if update_dict:
+            await session.execute(
+                update(Tasks).
+                where(Tasks.tid == str(tid)).
+                values(update_dict)
+            )
+
+        if task.input_to_remove:
+            rm_list = (await session.execute(
+                select(Input.source_ref).
+                where(Input.tid == str(tid),
+                      Input.index.in_(task.input_to_remove))
+            )).scalars().all()
+
+            await session.execute(
+                delete(Input).
+                where(Input.tid == str(tid),
+                      Input.index.in_(task.input_to_remove))
+            )
+
+        if input_list:
+            session.add_all(input_list)
+
+        await session.commit()
+
+        await session.refresh(res)
+
+        ires = (await session.execute(
+            select(Input).where(Input.tid == str(tid))
+        )).scalars().all()
+
+    setattr(res, 'number_of_input', len(ires))
+    setattr(res, 'input_list', ires)
+
+    if rm_list:
+        await delete_input_from_list(tid, [name for name in rm_list])
+    if files_list:
+        await write_input_from_list(tid, files_list)
+
+    return res
+
+
+@router.post("/{tid}/start", response_model=ConfirmRes)
+async def start_task(tid: UUID):
     return {
         "success": True
     }
 
 
-@router.put("/{id}")
-def put_tasks(id: UUID):
-    return {
-        "id": id,
-        "name": "T7",
-        "user_id": uuid4(),
-        "number_input": 5,
-        "processed": 0,
-        "start_time": None,
-        "finish_time": None,
-        "task_type": "batch",
-        "status": "create",
-        "input_list": [
-            "abcde.png",
-            "abcdf.png",
-            "abcdg.png",
-        ] + [
-            random_string(5) + ".png" for i in range(2)
-        ]
-    }
-
-
-@router.post("/{id}/start")
-def start_task(id: UUID):
+@router.post("/{tid}/stop", response_model=ConfirmRes)
+async def start_task(tid: UUID):
     return {
         "success": True
     }
 
 
-@router.post("/{id}/stop")
-def start_task(id: UUID):
-    return {
-        "success": True
-    }
+def __prepare_image(data: str, idx: int) -> tuple[bytes, str]:
+    data_list = data.split(',')
+
+    if len(data_list) != 2:
+        raise ValueError()
+
+    head, data = data_list
+
+    if head == 'data:image/png;base64':
+        ftype = '.png'
+    elif head == 'data:image/jpg;base64':
+        ftype = '.jpg'
+    elif head == 'data:image/jpeg;base64':
+        ftype = '.jpg'
+    else:
+        raise ValueError()
+
+    try:
+        b_data = base64.b64decode(data)
+    except:
+        raise ValueError()
+
+    return b_data, f'{idx}_{uuid4().hex[:7]}_{ftype}'

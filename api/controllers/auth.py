@@ -15,7 +15,6 @@ from core.security import (
     create_access_token,
     AuthContext)
 from database.models import User
-from database import crud
 from schemas.users import (
     UserDisplay,
     UserContext,
@@ -38,21 +37,25 @@ async def login(
             select(User).where(User.email == user.email)
         )).first()
 
-        if not res or not compare_hash(user.password,
-                                       res._data[0].password):
+        if not (res and compare_hash(user.password,
+                                     res.User.password)):
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED)
-        temp = user = res._data[0]
-        print('aaaaa')
+        temp: User = res.User
+        if not temp.is_active:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                'account is deactivated')
         await session.execute(
             update(User).where(
-                User.id == temp.id).values(
+                User.uid == temp.uid).values(
                     {'last_login': datetime.now()}))
         await session.commit()
 
-    auth = AuthContext(sub=temp.id,
+    auth = AuthContext(sub=temp.uid,
                        role=temp.role)
-    return UserContext(user=user,
+
+    return UserContext(user=res.User,
                        access_token=create_access_token(auth))
 
 
@@ -63,4 +66,10 @@ async def get_users(
         AsyncSession] = Depends(get_session)
 ):
 
-    return await crud.read_entity(async_session, auth_context.sub, User)
+    async with async_session() as session:
+        usr = await session.get(User, auth_context.sub)
+    if not usr:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            'cannot find account')
+    return usr
