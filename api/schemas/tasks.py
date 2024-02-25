@@ -15,6 +15,11 @@ from schemas.base import (
     BaseList)
 
 
+class InputDisplay(OutputModel):
+    index: int
+    source_ref: str
+
+
 class TaskDisplay(OutputModel):
     tid: UUID
     name: str
@@ -27,7 +32,7 @@ class TaskDisplay(OutputModel):
     status: TaskStatus
     number_of_input: int = 0
     processed: int = 0
-    input_list: list[dict[int, str]] = []
+    input_list: list[InputDisplay] = []
 
 
 class TaskList(BaseList):

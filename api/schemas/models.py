@@ -9,6 +9,7 @@ from schemas.base import (
 class ModelDisplay(OutputModel):
     name: str
     version: str
+    source_ref: str
 
 
 class ModelList(BaseList):
