@@ -131,14 +131,8 @@ class Model(Base):
         VARCHAR(32),
         nullable=False,
         default='')
-    data1: Mapped[bytes] = mapped_column(
-        LONGBLOB(),
-        nullable=False)
-    data2: Mapped[bytes] = mapped_column(
-        LONGBLOB(),
-        nullable=False)
-    data3: Mapped[bytes] = mapped_column(
-        LONGBLOB(),
+    source_ref: Mapped[str] = mapped_column(
+        VARCHAR(64),
         nullable=False)
 
 
@@ -155,7 +149,6 @@ class Tasks(Base):
     name: Mapped[str] = mapped_column(
         VARCHAR(32),
         nullable=False,
-        unique=True,
         index=True)
     uid: Mapped[uuid.UUID] = mapped_column(
         VARCHAR(36),
@@ -196,7 +189,7 @@ class Output(Base):
     index: Mapped[int] = mapped_column(
         INTEGER(),
         primary_key=True)
-    file_ref: Mapped[str] = mapped_column(
+    source_ref: Mapped[str] = mapped_column(
         VARCHAR(128),
         nullable=False)
     p1_x: Mapped[float] = mapped_column(
