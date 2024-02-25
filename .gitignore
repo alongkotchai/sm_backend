@@ -4,3 +4,7 @@
 */__pycache__*
 /venv
 *.pyc
+api/static/images/*
+
+*.pk
+!default.pk
