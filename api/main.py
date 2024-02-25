@@ -25,6 +25,7 @@ from controllers import (
     results,
     models as model)
 from workers import (
+    worker,
     file_handler)
 
 logger = logging.getLogger(__name__)
@@ -61,18 +62,26 @@ async def setup_file_handler() -> None:
         BASE_PATH, 'static', 'images', 'output')
     file_handler.INPUT_PATH = os.path.join(
         BASE_PATH, 'static', 'images', 'input')
+    file_handler.MODEL_PATH = os.path.join(
+        BASE_PATH, 'static', 'models')
+    worker.BASE_IN = file_handler.INPUT_PATH
+    worker.BASE_OUT = file_handler.OUTPUT_PATH
+    worker.BASE_MODEL = file_handler.MODEL_PATH
 
     if not os.path.exists(file_handler.OUTPUT_PATH):
         os.mkdir(file_handler.OUTPUT_PATH)
     if not os.path.exists(file_handler.INPUT_PATH):
         os.mkdir(file_handler.INPUT_PATH)
+    if not os.path.exists(file_handler.MODEL_PATH):
+        os.mkdir(file_handler.MODEL_PATH)
 
 
 async def setup_default_model() -> None:
 
-    await model.create_default(
+    await model.create_default_model(
         os.path.join(
-            BASE_PATH, 'static'),
+            BASE_PATH, 'static', 'models'),
+        'default.pk',
         engine.async_session)
 
 
@@ -91,6 +100,7 @@ async def lifespan(app: FastAPI):
     await setup_db()
     await init_root_user()
     await setup_file_handler()
+    await setup_default_model()
 
     yield
 
@@ -157,14 +167,24 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-app.mount("/images", StaticFiles(
-    directory=os.path.join(BASE_PATH, "static", "images")),
-    name="static")
 
-if __name__ == "__main__":
+def main() -> None:
+    base_images = os.path.join(
+        BASE_PATH, 'static', 'images')
+    if not os.path.exists(base_images):
+        os.mkdir(base_images)
+
+    app.mount("/images", StaticFiles(
+        directory=base_images),
+        name="static")
+
     # start serving
-    time.sleep(3)
+    # time.sleep(3)
     uvicorn.run(app,
                 host=str(setting.SERVICE_HOST),
                 port=setting.SERVICE_PORT,
                 log_config="./static/logs/log_conf.yml")
+
+
+if __name__ == "__main__":
+    main()
