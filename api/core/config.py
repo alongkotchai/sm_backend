@@ -15,8 +15,9 @@ class Setting(BaseSettings):
         Class represent Service setting parameters
     """
     MYSQL_DSN: MySQLDsn = Field(
-        "mysql+aiomysql://root:rootpass@localhost/api?charset=utf8mb4")
+        default="mysql+aiomysql://root:rootpass@localhost/api?charset=utf8mb4")
     SECRET_AUTH: str = Field(default='hello_world')
+    SECRET_REFRESH: str = Field(default='hello_world')
     ACCESS_EXPIRE_HOUR: int = Field(default=1, min=1, max=24)
     SERVICE_HOST: IPvAnyAddress = Field(default='127.0.0.1')
     SERVICE_PORT: int = Field(min=1, max=65536, default=50505)
