@@ -52,24 +52,15 @@ async def get_models(
                      models=models)
 
 
-async def create_default(
+async def create_default_model(
     base_dir: str,
+    filename: str,
     async_session:
         async_sessionmaker[AsyncSession]
 ) -> None:
-    path1 = path.join(base_dir, 'data1.pk')
-    path2 = path.join(base_dir, 'data2.pk')
-    path3 = path.join(base_dir, 'data3.pk')
-
-    if not (path.exists(path1) and path.exists(path2) and path.exists(path2)):
+    dir = path.join(base_dir, filename)
+    if not (path.exists(dir)):
         raise ValueError('invalid path for default model data')
-
-    async with aiofiles.open(path1, mode='rb') as f:
-        data1 = await f.read()
-    async with aiofiles.open(path2, mode='rb') as f:
-        data2 = await f.read()
-    async with aiofiles.open(path3, mode='rb') as f:
-        data3 = await f.read()
 
     async with async_session() as session:
         if await session.get(Model, 'default'):
@@ -77,8 +68,7 @@ async def create_default(
 
         session.add(
             Model(name='default',
-                  data1=data1,
-                  data2=data2,
-                  data3=data3))
+                  version='1.0',
+                  source_ref=filename))
 
         await session.commit()

@@ -8,7 +8,9 @@ from fastapi import (
     HTTPException,
     status,
     Depends)
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import (
+    IntegrityError,
+    NoResultFound)
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession)
@@ -81,7 +83,7 @@ async def get_tasks(
     for i, row in enumerate(res):
         setattr(row.Tasks, 'number_of_input', 0)
         setattr(row.Tasks, 'input_list', [])
-        tasks.append[row.Tasks]
+        tasks.append(row.Tasks)
         tasks_dict[row.Tasks.tid] = i
 
     for row in ires:
@@ -90,7 +92,8 @@ async def get_tasks(
         idx = tasks_dict[row.Input.tid]
         tasks[idx].number_of_input += 1
         tasks[idx].input_list.append(
-            {row.Input.index: row.Input.source_ref})
+            {'index': row.Input.index,
+             'source_ref': row.Input.source_ref})
 
     return TaskList(page_number=q.page,
                     page_size=q.size,
@@ -134,11 +137,11 @@ async def post_tasks(
         AsyncSession] = Depends(get_session)):
 
     tid = uuid4()
-    temp = Tasks(**task.model_dump(exclude='input_list'),
-                 tid=tid,
-                 uid=auth_context.sub,
-                 create_at=datetime.now(),
-                 status=TaskStatus.CREATE)
+    task_temp = Tasks(**task.model_dump(exclude='input_list'),
+                      tid=tid,
+                      uid=auth_context.sub,
+                      create_at=datetime.now(),
+                      status=TaskStatus.CREATE)
 
     input_list: list[Input] = []
     files_list: list[tuple[bytes, str]] = []
@@ -155,25 +158,27 @@ async def post_tasks(
 
     async with async_session() as session:
         try:
-            session.add(temp)
+            session.add(task_temp)
+            await session.flush()
             session.add_all(input_list)
             await session.commit()
-            await session.refresh(temp)
-        except IntegrityError:
+            await session.refresh(task_temp)
+        except IntegrityError as e:
+            print(e)
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                detail='connot create task')
+                detail="connot create task, check if model's name is correct")
 
         ires = (await session.execute(
-            select(Input).where(Input.tid == str(temp.tid))
+            select(Input).where(Input.tid == str(task_temp.tid))
         )).scalars().all()
 
-    setattr(temp, 'number_of_input', len(ires))
-    setattr(temp, 'input_list', ires)
+    setattr(task_temp, 'number_of_input', len(ires))
+    setattr(task_temp, 'input_list', ires)
 
     await write_input_from_list(tid, files_list)
 
-    return temp
+    return task_temp
 
 
 @router.delete("/{tid}", response_model=ConfirmRes)
@@ -208,7 +213,7 @@ async def delete_tasks(
 
         await session.commit()
 
-    delete_task_folder(tid)
+    await delete_task_folder(tid)
 
     return ConfirmRes(success=True)
 
@@ -222,6 +227,7 @@ async def put_tasks(
         AsyncSession] = Depends(get_session)):
 
     update_dict = task.model_dump(
+        exclude_none=True,
         exclude=['input_to_remove', 'input_to_add'])
 
     input_list: list[Input] = []
@@ -230,6 +236,11 @@ async def put_tasks(
 
     async with async_session() as session:
         res = await session.get(Tasks, tid)
+
+        if not res:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f'Task :{tid} not found')
 
         if res.status in (TaskStatus.RUN, TaskStatus.WAIT):
             raise HTTPException(
@@ -243,10 +254,13 @@ async def put_tasks(
                 status.HTTP_404_NOT_FOUND,
                 detail=f'Task :{tid} Not Found')
 
-        m = (await session.execute(
-            select(func.max(Input.index)).
-            where(Input.tid == str(tid))
-        )).scalar_one()
+        try:
+            m = (await session.execute(
+                select(func.max(Input.index)).
+                where(Input.tid == str(tid))
+            )).scalar_one() + 1
+        except NoResultFound:
+            m = 0
 
         for i, s in enumerate(task.input_to_add):
             try:
