@@ -7,6 +7,7 @@ from uuid import uuid4, UUID
 
 INPUT_PATH: str
 OUTPUT_PATH: str
+MODEL_PATH: str
 
 
 async def __write_file(base_path: str,
@@ -14,7 +15,7 @@ async def __write_file(base_path: str,
                        data: bytes,
                        filename: str) -> None:
 
-    path = os.path.join(base_path, tid.hex)
+    path = os.path.join(base_path, str(tid))
     if not os.path.exists(path):
         os.mkdir(path)
     path = os.path.join(path, filename)
@@ -46,7 +47,7 @@ async def __read_file(base_path: str,
                       tid: UUID,
                       filename: str) -> bytes:
 
-    path = os.path.join(base_path, tid.hex, filename)
+    path = os.path.join(base_path, str(tid), filename)
 
     if not os.path.exists(path):
         raise ValueError('file not existed')
@@ -61,7 +62,7 @@ async def read_input(tid: UUID, filename: str) -> bytes:
 
 
 def __delete_file(base_path: str, tid: UUID, filename: str):
-    path = os.path.join(base_path, tid.hex, filename)
+    path = os.path.join(base_path, str(tid), filename)
     if not os.path.exists(path):
         return
     os.remove(path)
@@ -85,8 +86,8 @@ async def delete_input_from_list(tid: UUID, filenames: list[str]) -> None:
 
 async def delete_task_folder(tid: UUID) -> None:
 
-    path1 = os.path.join(INPUT_PATH, tid.hex)
-    path2 = os.path.join(OUTPUT_PATH, tid.hex)
+    path1 = os.path.join(INPUT_PATH, str(tid))
+    path2 = os.path.join(OUTPUT_PATH, str(tid))
     if os.path.exists(path1):
         shutil.rmtree(path1)
     if os.path.exists(path2):
