@@ -1,330 +1,167 @@
+from uuid import UUID
 from fastapi import (
     APIRouter,
     HTTPException,
     status,
     Depends)
+from sqlalchemy import (
+    func,
+    desc,
+    select)
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncSession)
+from core.security import (
+    AuthContext,
+    Role)
+from database.models import (
+    Output,
+    Input,
+    Tasks)
+from schemas.base import (
+    TaskStatus,
+    QueryBase,
+    last_page)
+from schemas.results import (
+    ResultDetail,
+    ResultList)
+from depends import (
+    get_auth,
+    get_session)
 
-from uuid import uuid4, UUID
 router = APIRouter(prefix='/results')
 
 
-@router.get("/summary")
-def get_summary():
-    return {
-        "results": [
+@router.get("/summary", response_model=ResultList)
+async def get_summary(
+    q: QueryBase = Depends(),
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    stmt_task = (select(Tasks.tid,
+                        func.count(Tasks.tid).
+                        over().
+                        label('total'))
+                 .where(Tasks.status != TaskStatus.CREATE))
+
+    if auth_context.role == Role.USER:
+        stmt_task = stmt_task.where(
+            Tasks.uid == str(auth_context.sub))
+
+    async with async_session() as session:
+        tasks = (await session.execute(
+            stmt_task.
+            order_by(desc(Tasks.create_at)
+                     if q.desc
+                     else Tasks.create_at).
+            offset((q.page - 1) * q.size).
+            limit(q.size)
+        )).all()
+
+        count = tasks[0].total if tasks else 0
+        tids = [task._data[0] for task in tasks]
+
+        outputs = (await session.execute(
+            select(Output).
+            where(Output.tid.in_(tids))
+        )).scalars().all()
+
+    _tasks_dict = {}
+    result_list = []
+
+    for i, task in enumerate(tids):
+        result_list.append({'tid': task, 'outputs': []})
+        _tasks_dict[task] = i
+
+    for output in outputs:
+        if output.tid not in _tasks_dict:
+            continue
+        result_list[_tasks_dict[output.tid]]['outputs'].append(
             {
-                "task_id": uuid4(),
-                "outputs": [
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcde.png",
-                        "output_file": "cdefg.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdf.png",
-                        "output_file": "cdefh.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdg.png",
-                        "output_file": "cdefi.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdh.png",
-                        "output_file": "cdefj.png"
-                    }
-                ]
-            },
-            {
-                "task_id": uuid4(),
-                "outputs": [
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcde.png",
-                        "output_file": "cdefg.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdf.png",
-                        "output_file": "cdefh.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdg.png",
-                        "output_file": "cdefi.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdh.png",
-                        "output_file": "cdefj.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcde.png",
-                        "output_file": "cdefg.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdf.png",
-                        "output_file": "cdefh.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdg.png",
-                        "output_file": "cdefi.png"
-                    },
-                    {
-                        "p1": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "p2": {
-                            "center_x": 99.0,
-                            "center_y": 99.0,
-                            "width": 10.0,
-                            "height": 10.0,
-                            "predict": 9.99
-                        },
-                        "input_file": "abcdh.png",
-                        "output_file": "cdefj.png"
-                    }
-                ]
+                'p1': {
+                    'center_x': output.p1_x,
+                    'center_y': output.p1_y,
+                    'width': output.p1_w,
+                    'height': output.p1_h,
+                    'predict': output.p1_predict
+                },
+                'p2': {
+                    'center_x': output.p2_x,
+                    'center_y': output.p2_y,
+                    'width': output.p2_w,
+                    'height': output.p2_h,
+                    'predict': output.p2_predict
+                },
+                'input_file': output.source_ref,
+                'output_file': output.source_ref
             }
-        ]
-    }
+        )
+
+    return ResultList(page_number=q.page,
+                      page_size=q.size,
+                      last_page=last_page(count, q.size),
+                      count=count,
+                      results=result_list)
 
 
-@router.get("/{id}")
-def get_detail(id: UUID):
-    return {
-        "task_id": id,
-        "name": "T99",
-        "user_id": uuid4(),
-        "number_input": 4,
-        "processed": 4,
-        "start_time": "2024-01-26T23:30:11",
-        "finish_time": "2024-01-26T23:31:11",
-        "task_type": "batch",
-        "status": "finish",
-        "outputs": [
+@router.get("/{tid}", response_model=ResultDetail)
+async def get_detail(
+    tid: UUID,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    async with async_session() as session:
+        task = (await session.execute(
+            select(Tasks).
+            where(Tasks.tid == str(tid),
+                  Tasks.uid == str(auth_context.sub))
+        )).scalar_one_or_none()
+
+        if not task:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                f'Not Found task {str(tid)}')
+
+        if task.status == TaskStatus.CREATE:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                f'tasks has not been start')
+
+        outputs = (await session.execute(
+            select(Output).
+            where(Output.tid == str(tid))
+        )).scalars().all()
+
+        in_count = (await session.execute(
+            select(func.count(Input.tid)).
+            where(Input.tid == str(tid))
+        )).scalars().one_or_none() or 0
+
+    results = []
+
+    for output in outputs:
+        results.append(
             {
-                "p1": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
+                'p1': {
+                    'center_x': output.p1_x,
+                    'center_y': output.p1_y,
+                    'width': output.p1_w,
+                    'height': output.p1_h,
+                    'predict': output.p1_predict
                 },
-                "p2": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
+                'p2': {
+                    'center_x': output.p2_x,
+                    'center_y': output.p2_y,
+                    'width': output.p2_w,
+                    'height': output.p2_h,
+                    'predict': output.p2_predict
                 },
-                "input_file": "abcde.png",
-                "output_file": "cdefg.png"
-            },
-            {
-                "p1": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "p2": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "input_file": "abcdf.png",
-                "output_file": "cdefh.png"
-            },
-            {
-                "p1": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "p2": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "input_file": "abcdg.png",
-                "output_file": "cdefi.png"
-            },
-            {
-                "p1": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "p2": {
-                    "center_x": 99.0,
-                    "center_y": 99.0,
-                    "width": 10.0,
-                    "height": 10.0,
-                    "predict": 9.99
-                },
-                "input_file": "abcdh.png",
-                "output_file": "cdefj.png"
-            }]
-    }
+                'input_file': output.source_ref,
+                'output_file': output.source_ref
+            }
+        )
+        setattr(task, 'outputs', results)
+        setattr(task, 'number_of_input', in_count)
+        setattr(task, 'processed', len(results))
+
+    return task

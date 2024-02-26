@@ -70,7 +70,7 @@ async def update_result(tid: str,
 
     for key in bbox:
 
-        box = pred[key]
+        box = bbox[key]
         if len(box) < 4:
             continue
 
@@ -128,7 +128,6 @@ async def work(wid: int, q: Queue, e: Event, async_session: asess[AsyncSession])
             bbox = await get_bounding_box(model, path, tid)
             pred = predicted_fat_length(bbox)
 
-            print(f'{filename=}', pred, bbox)
             await update_result(tid, index, filename, pred, bbox, async_session)
 
         await update_status(tid, TaskStatus.FINISH, async_session)

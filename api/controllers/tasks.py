@@ -26,6 +26,7 @@ from core.security import (
 from database.models import (
     Tasks,
     Model,
+    Output,
     Input)
 from workers.file_handler import (
     delete_input_from_list,
@@ -78,12 +79,20 @@ async def get_tasks(
             select(Input).where(Input.tid.in_(tids))
         )).all()
 
+        ores = (await session.execute(
+            select(Output.tid,
+                   func.count(Output.tid).label('count')).
+            where(Output.tid.in_(tids)).
+            group_by(Output.tid)
+        )).all()
+
     count = res[0].total if res else 0
 
     tasks_dict: dict[UUID, int] = {}
     tasks: list[Tasks] = []
     for i, row in enumerate(res):
         setattr(row.Tasks, 'number_of_input', 0)
+        setattr(row.Tasks, 'processed', 0)
         setattr(row.Tasks, 'input_list', [])
         tasks.append(row.Tasks)
         tasks_dict[row.Tasks.tid] = i
@@ -96,6 +105,12 @@ async def get_tasks(
         tasks[idx].input_list.append(
             {'index': row.Input.index,
              'source_ref': row.Input.source_ref})
+
+    for row in ores:
+        if row._data[0] not in tasks_dict:
+            continue
+        idx = tasks_dict[row._data[0]]
+        tasks[idx].processed = row._data[1]
 
     return TaskList(page_number=q.page,
                     page_size=q.size,
