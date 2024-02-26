@@ -25,6 +25,7 @@ from core.security import (
     Role)
 from database.models import (
     Tasks,
+    Model,
     Input)
 from workers.file_handler import (
     delete_input_from_list,
@@ -44,7 +45,8 @@ from schemas.tasks import (
 from depends import (
     get_auth,
     get_session)
-
+from workers.manager import (
+    add_task)
 
 router = APIRouter(prefix='/tasks')
 
@@ -315,17 +317,59 @@ async def put_tasks(
 
 
 @router.post("/{tid}/start", response_model=ConfirmRes)
-async def start_task(tid: UUID):
+async def start_task(
+    tid: UUID,
+    auth_context: AuthContext = Depends(get_auth),
+    async_session: async_sessionmaker[
+        AsyncSession] = Depends(get_session)):
+
+    async with async_session() as session:
+        res = (await session.execute(
+            select(Tasks, Model).
+            join(Model, onclause=(Tasks.m_name == Model.name)).
+            where(Tasks.tid == str(tid))
+        )).one_or_none()
+
+        if not res or (auth_context.role == Role.USER
+                       and res.Tasks.uid != str(auth_context.sub)):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f'Task :{tid} not found')
+
+        inputs = (await session.execute(
+            select(Input).
+            where(Input.tid == str(tid))
+        )).scalars().all()
+
+    filenames = [iput.source_ref for iput in inputs]
+    if len(filenames) == 0:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f'Task :{tid} not have any inputs')
+
+    res = add_task(tid, filenames, res.Model.source_ref)
+    if not res:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f'canot start task')
+
+    async with async_session() as session:
+        await session.execute(
+            update(Tasks).where(Tasks.tid == str(tid)).values(
+                {'status': TaskStatus.WAIT})
+        )
+        await session.commit()
+
     return {
         "success": True
     }
 
 
-@router.post("/{tid}/stop", response_model=ConfirmRes)
-async def start_task(tid: UUID):
-    return {
-        "success": True
-    }
+# @router.post("/{tid}/stop", response_model=ConfirmRes)
+# async def start_task(tid: UUID):
+#     return {
+#         "success": True
+#     }
 
 
 def __prepare_image(data: str, idx: int) -> tuple[bytes, str]:

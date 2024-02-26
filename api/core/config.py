@@ -21,6 +21,7 @@ class Setting(BaseSettings):
     ACCESS_EXPIRE_HOUR: int = Field(default=1, min=1, max=24)
     SERVICE_HOST: IPvAnyAddress = Field(default='127.0.0.1')
     SERVICE_PORT: int = Field(min=1, max=65536, default=50505)
+    NUMBER_WORKER: int = Field(min=1, max=8, default=4)
 
 
 setting = Setting()
