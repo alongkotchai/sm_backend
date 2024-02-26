@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    container_name: db
+    container_name: sm_db
     image: mysql:8.0
     volumes:
       - mysql-data:/var/lib/mysql
@@ -11,10 +11,13 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_DATABASE: api
+    # ports:
+    #   - "3306:3306"
+    restart: always
   myadmin:
     depends_on:
       - db
-    container_name: phpmyadmin
+    container_name: sm_phpmyadmin
     image: phpmyadmin:5.2.1
     ports:
       - 8080:80
@@ -22,10 +25,11 @@ services:
       - "db:db"
     environment:
       - PMA_ARBITRARY=1
+    restart: always
   api:
     depends_on:
       - db
-    container_name: api
+    container_name: sm_api
     build: ./api
     volumes:
       - ./api/static:/api/static
@@ -37,8 +41,10 @@ services:
       - MYSQL_DSN=${MYSQL_DSN}
       - SECRET_AUTH=${SECRET_AUTH}
       - ACCESS_EXPIRE_HOUR=${ACCESS_EXPIRE_HOUR}
-      - SERVICE_HOST=${SERVICE_HOST}
+      - SERVICE_HOST=0.0.0.0
       - SERVICE_PORT=50505
+      - NUMBER_WORKER=${NUMBER_WORKER}
+    restart: always
 
 volumes:
   mysql-data:
