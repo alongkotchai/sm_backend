@@ -5,12 +5,13 @@ from threading import (
     Event)
 import asyncio
 from core.config import setting
-from database.engine import async_session
+from database import engine
 from workers.worker import work
 
 __task_queue: Queue = Queue()
 __worker_event: list[Event] = []
 __worker_list: list[Thread] = []
+__session_list: list = []
 
 
 def __wrapper(wid: int, q: Queue, e: Event, async_session):
@@ -21,16 +22,27 @@ def get_status() -> tuple[int, int]:
     return __task_queue.qsize(), len(__worker_list)
 
 
-def add_task(tid: UUID, filenames: list[str], model_fname: str) -> bool:
+def add_task(tid: UUID,
+             indx_fnames: list[tuple[int, str]],
+             model_fname: str
+             ) -> bool:
     try:
-        __task_queue.put((str(tid), filenames, model_fname))
+        __task_queue.put(
+            (str(tid),
+             indx_fnames,
+             model_fname
+             ))
         return True
     except:
         False
 
 
-def init_worker():
+async def init_worker(dsn):
+
     for i in range(setting.NUMBER_WORKER):
+        async_eng, async_session = await engine.init_engine(dsn)
+        __session_list.append(async_eng)
+
         event = Event()
         thread = Thread(
             target=__wrapper,
@@ -41,8 +53,13 @@ def init_worker():
         thread.start()
 
 
-def close_all():
+async def close_all():
     for worker in __worker_event:
         worker.clear()
     for thread in __worker_list:
         thread.join()
+    for index, eng in enumerate(__session_list):
+        if not eng:
+            continue
+        await eng.dispose()
+        print(f'Worker {index} engine terminated')

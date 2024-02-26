@@ -54,17 +54,46 @@ def predicted_fat_length(bbox: dict) -> dict:
     return pred_length
 
 
-async def update_result(result: dict, async_session: asess[AsyncSession]):
-    # async with async_session() as session:
-    #     session.add(Output(
+async def update_result(tid: str,
+                        index:  int,
+                        source: str,
+                        pred: dict,
+                        bbox: dict,
+                        async_session: asess[AsyncSession]):
+    data = {}
 
-    #     ))
-    #     await session.commit()
-    ...
+    for key in pred:
+        if key < 0.5:
+            data['p1_predict'] = pred[key]
+        else:
+            data['p2_predict'] = pred[key]
+
+    for key in bbox:
+
+        box = pred[key]
+        if len(box) < 4:
+            continue
+
+        if key < 0.5:
+            data['p1_x'] = box[0]
+            data['p1_y'] = box[1]
+            data['p1_w'] = box[2]
+            data['p1_h'] = box[3]
+        else:
+            data['p2_x'] = box[0]
+            data['p2_y'] = box[1]
+            data['p2_w'] = box[2]
+            data['p2_h'] = box[3]
+
+    output = Output(tid=tid, index=index, source_ref=source, **data)
+
+    async with async_session() as session:
+        session.add(output)
+        await session.commit()
 
 
 async def update_status(tid: str, status: TaskStatus, async_session: asess[AsyncSession]):
-    data = {'status': TaskStatus.WAIT}
+    data = {'status': status}
     if status == TaskStatus.RUN:
         data['start_time'] = datetime.now()
     elif status == TaskStatus.FINISH:
@@ -83,7 +112,7 @@ async def work(wid: int, q: Queue, e: Event, async_session: asess[AsyncSession])
     while e.is_set():
 
         try:
-            tid, filenames, model_name = q.get(timeout=5)
+            tid, indx_fnames, model_name = q.get(timeout=5)
         except Empty:
             continue
 
@@ -94,13 +123,13 @@ async def work(wid: int, q: Queue, e: Event, async_session: asess[AsyncSession])
             print(f'canot locate model file {model_name}')
             continue
 
-        for filename in filenames:
+        for index, filename in indx_fnames:
             path = os.path.join(BASE_IN, tid, filename)
             bbox = await get_bounding_box(model, path, tid)
-            pres = predicted_fat_length(bbox)
+            pred = predicted_fat_length(bbox)
 
-            print(f'{filename=}', pres, bbox)
-            await update_result({}, async_session)
+            print(f'{filename=}', pred, bbox)
+            await update_result(tid, index, filename, pred, bbox, async_session)
 
         await update_status(tid, TaskStatus.FINISH, async_session)
         print(f'task {tid} is done')

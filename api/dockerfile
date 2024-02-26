@@ -1,8 +1,20 @@
-FROM python:3.11.7-alpine
+FROM python:3.11-slim
 WORKDIR /api
-COPY ./requirements.txt /api/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /api/requirements.txt
-# RUN pip install fastapi[all]
+
+RUN apt-get update
+RUN apt-get install -y libglib2.0-0 libsm6 libxrender1 libxext6 libgl1-mesa-dev
+
+#has problems when install with requirements.txt, manual install one by one instead.
+RUN pip3 install --upgrade pip
+RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip3 install --no-cache-dir ultralytics
+RUN pip3 install --no-cache-dir fastapi[all]
+RUN pip3 install --no-cache-dir aiofiles
+RUN pip3 install --no-cache-dir aiomysql
+RUN pip3 install --no-cache-dir sqlalchemy
+RUN pip3 install --no-cache-dir pyjwt
+RUN pip3 install --no-cache-dir bcrypt
+
 EXPOSE 50505
 COPY . /api
 CMD ["python3", "./main.py"]

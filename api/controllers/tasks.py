@@ -341,13 +341,13 @@ async def start_task(
             where(Input.tid == str(tid))
         )).scalars().all()
 
-    filenames = [iput.source_ref for iput in inputs]
-    if len(filenames) == 0:
+    indx_fnames = [(iput.index, iput.source_ref) for iput in inputs]
+    if len(indx_fnames) == 0:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f'Task :{tid} not have any inputs')
 
-    res = add_task(tid, filenames, res.Model.source_ref)
+    res = add_task(tid, indx_fnames, res.Model.source_ref)
     if not res:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

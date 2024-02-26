@@ -90,7 +90,7 @@ async def start_worker() -> None:
     """
         initial and start workers
     """
-    manager.init_worker()
+    await manager.init_worker(str(setting.MYSQL_DSN))
 
 
 async def close_db_connection() -> None:
@@ -106,7 +106,7 @@ async def close_worker() -> None:
     """
         Terminate all workers
     """
-    manager.close_all()
+    await manager.close_all()
 
 
 @asynccontextmanager
