@@ -25,6 +25,7 @@ from controllers import (
     results,
     models as model)
 from workers import (
+    manager,
     worker,
     file_handler)
 
@@ -85,6 +86,13 @@ async def setup_default_model() -> None:
         engine.async_session)
 
 
+async def start_worker() -> None:
+    """
+        initial and start workers
+    """
+    manager.init_worker()
+
+
 async def close_db_connection() -> None:
     """
         Dispose engine
@@ -94,6 +102,13 @@ async def close_db_connection() -> None:
     logger.info('close MySQL conntection')
 
 
+async def close_worker() -> None:
+    """
+        Terminate all workers
+    """
+    manager.close_all()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # run before api service start
@@ -101,10 +116,12 @@ async def lifespan(app: FastAPI):
     await init_root_user()
     await setup_file_handler()
     await setup_default_model()
+    await start_worker()
 
     yield
 
     # run after service closing
+    await close_worker()
     await close_db_connection()
 
 app = FastAPI(lifespan=lifespan)
