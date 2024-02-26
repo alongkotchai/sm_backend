@@ -1,1 +1,8 @@
 ##docker compose up -d
+
+.env
+MYSQL_PASSWORD=
+MYSQL_DSN=
+SECRET_AUTH=
+ACCESS_EXPIRE_HOUR=
+NUMBER_WORKER=
