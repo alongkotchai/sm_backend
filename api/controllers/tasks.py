@@ -276,7 +276,7 @@ async def put_tasks(
                 select(func.max(Input.index)).
                 where(Input.tid == str(tid))
             )).scalar_one() + 1
-        except NoResultFound or TypeError:
+        except (NoResultFound, TypeError):
             m = 0
 
         for i, s in enumerate(task.input_to_add):
