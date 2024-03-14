@@ -87,14 +87,15 @@ def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
                 verbose=False)
 
             annotated_frame = results[0].plot()
-
+            annotated_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            print(annotated_frame.shape, 'output shape')
             if not results[0].boxes.is_track:
                 try:
                     print(f'put 0 f {frame_count}')
                     qout.put({
                         'frame': True,
                         'length': {},
-                        'image': annotated_frame
+                        'image': annotated_frame,
                     }, timeout=10)
                 except Exception as e:
                     print('error put0', e)
