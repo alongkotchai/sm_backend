@@ -99,6 +99,8 @@ def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
                 except Exception as e:
                     print('error put0', e)
                     break
+                finally:
+                    continue
 
             id_list = results[0].boxes.id.tolist()
 
