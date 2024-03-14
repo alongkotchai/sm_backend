@@ -17,6 +17,7 @@ def get_img_data(fname: str):
 def readb64(uri):
     nparr = np.frombuffer(base64.b64decode(uri), np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    print(img.shape, 'input shape')
     return img
 
 
