@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import (
+    WebSocket,
     Request,
     FastAPI,
     status)
@@ -23,10 +24,12 @@ from controllers import (
     tasks,
     info,
     results,
+    rt,
     models as model)
 from workers import (
     manager,
     worker,
+    rt_worker,
     file_handler)
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,7 @@ async def setup_file_handler() -> None:
     worker.BASE_IN = file_handler.INPUT_PATH
     worker.BASE_OUT = file_handler.OUTPUT_PATH
     worker.BASE_MODEL = file_handler.MODEL_PATH
+    rt_worker.BASE_PATH = file_handler.MODEL_PATH
 
     if not os.path.exists(file_handler.OUTPUT_PATH):
         os.mkdir(file_handler.OUTPUT_PATH)
@@ -185,6 +189,14 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
+@app.websocket('/rt/v1')
+async def rt_websocket(ws: WebSocket, access_token: str):
+    try:
+        await rt.handle_rt(ws, access_token)
+    except Exception as error:
+        print(error)
+
+
 def main() -> None:
     base_images = os.path.join(
         BASE_PATH, 'static', 'images')
@@ -196,7 +208,6 @@ def main() -> None:
         name="static")
 
     # start serving
-    # time.sleep(3)
     uvicorn.run(app,
                 host=str(setting.SERVICE_HOST),
                 port=setting.SERVICE_PORT,
