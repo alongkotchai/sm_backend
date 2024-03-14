@@ -13,7 +13,7 @@ RATE = 1/25
 
 
 def array_resize_to_base64(img_array) -> str:
-    data = Image.fromarray(img_array).reduce(2)
+    data = Image.fromarray(img_array).reduce(3)
     buffered = BytesIO()
     data.save(buffered, format="JPEG")
     return 'data:image/jpg;base64,' + base64.b64encode(buffered.getvalue()).decode()
@@ -25,7 +25,7 @@ async def handle_rt(ws: WebSocket, access_token: str):
     except:
         await ws.close()
     await ws.accept()
-
+    print('accept')
     tid = uuid4()
 
     while True:
@@ -48,6 +48,7 @@ async def handle_rt(ws: WebSocket, access_token: str):
         last_time = time()
         while True:
             # receive input
+            print('wait for input')
             data_in = await ws.receive_text()
             if data_in == 'q':
                 break
