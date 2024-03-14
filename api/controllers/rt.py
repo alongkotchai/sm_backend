@@ -13,9 +13,9 @@ RATE = 1/25
 
 
 def array_resize_to_base64(img_array) -> str:
-    data = Image.fromarray(img_array).reduce(3)
+    data = Image.fromarray(img_array)
     buffered = BytesIO()
-    data.save(buffered, format="JPEG")
+    data.save(buffered, format="JPEG", optimize=True, quality=50)
     return 'data:image/jpg;base64,' + base64.b64encode(buffered.getvalue()).decode()
 
 
