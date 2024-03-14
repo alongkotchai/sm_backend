@@ -89,7 +89,16 @@ def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
             annotated_frame = results[0].plot()
 
             if not results[0].boxes.is_track:
-                continue
+                try:
+                    print(f'put 0 f {frame_count}')
+                    qout.put({
+                        'frame': True,
+                        'length': {},
+                        'image': annotated_frame
+                    }, timeout=10)
+                except Exception as e:
+                    print('error put0', e)
+                    break
 
             id_list = results[0].boxes.id.tolist()
 
