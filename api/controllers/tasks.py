@@ -153,6 +153,11 @@ async def post_tasks(
     async_session: async_sessionmaker[
         AsyncSession] = Depends(get_session)):
 
+    if task.task_type != TaskType.BATCH:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="only support creating batch task")
+
     tid = uuid4()
     task_temp = Tasks(**task.model_dump(exclude='input_list'),
                       tid=tid,
@@ -271,6 +276,21 @@ async def put_tasks(
                 status.HTTP_404_NOT_FOUND,
                 detail=f'Task :{tid} Not Found')
 
+        if update_dict:
+            await session.execute(
+                update(Tasks).
+                where(Tasks.tid == str(tid)).
+                values(update_dict)
+            )
+
+        if res.task_type != TaskType.BATCH:
+            await session.commit()
+            await session.refresh(res)
+            setattr(res, 'number_of_input', 0)
+            setattr(res, 'input_list', [])
+
+            return res
+
         try:
             m = (await session.execute(
                 select(func.max(Input.index)).
@@ -288,13 +308,6 @@ async def put_tasks(
             input_list.append(Input(tid=tid,
                                     index=i+m,
                                     source_ref=fname))
-
-        if update_dict:
-            await session.execute(
-                update(Tasks).
-                where(Tasks.tid == str(tid)).
-                values(update_dict)
-            )
 
         if task.input_to_remove:
             rm_list = (await session.execute(
@@ -351,6 +364,16 @@ async def start_task(
                 status.HTTP_404_NOT_FOUND,
                 detail=f'Task :{tid} not found')
 
+        if res.Tasks.task_type != TaskType.BATCH:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f'only batch task can be start')
+
+        if res.Tasks.status in (TaskStatus.RUN, TaskStatus.WAIT):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f'Task :{tid} is already processing')
+
         inputs = (await session.execute(
             select(Input).
             where(Input.tid == str(tid))
@@ -380,13 +403,6 @@ async def start_task(
     }
 
 
-# @router.post("/{tid}/stop", response_model=ConfirmRes)
-# async def start_task(tid: UUID):
-#     return {
-#         "success": True
-#     }
-
-
 def __prepare_image(data: str, idx: int) -> tuple[bytes, str]:
     data_list = data.split(',')
 
@@ -410,3 +426,52 @@ def __prepare_image(data: str, idx: int) -> tuple[bytes, str]:
         raise ValueError()
 
     return b_data, f'{idx}_{uuid4().hex[:7]}_{ftype}'
+
+
+async def create_rt_task(
+        tid: UUID,
+        task: TaskCreate,
+        auth_context: AuthContext,
+        async_session: async_sessionmaker[AsyncSession]):
+
+    if task.task_type == TaskType.BATCH:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="only support creating rt task")
+
+    now = datetime.now()
+
+    task_temp = Tasks(**task.model_dump(exclude='input_list'),
+                      tid=tid,
+                      uid=auth_context.sub,
+                      create_at=now,
+                      start_time=now,
+                      status=TaskStatus.RUN)
+
+    async with async_session() as session:
+        try:
+            session.add(task_temp)
+            await session.commit()
+        except IntegrityError as e:
+            print(e)
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="connot create rt task, check if model's name is correct")
+
+
+async def finish_rt_task(
+        tid: UUID,
+        async_session: async_sessionmaker[AsyncSession]):
+
+    async with async_session() as session:
+        try:
+            await session.execute(
+                update(Tasks).
+                where(Tasks.tid == str(tid),
+                      Tasks.task_type != TaskType.BATCH).
+                values({'status': TaskStatus.FINISH,
+                        'finish_time': datetime.now()})
+            )
+            await session.commit()
+        except IntegrityError as e:
+            print(e)

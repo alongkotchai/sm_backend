@@ -2,14 +2,26 @@ from queue import Queue
 from threading import Event
 from uuid import uuid4
 from time import time, sleep
+from datetime import datetime
 from PIL import Image
 import base64
 from io import BytesIO
 from fastapi import WebSocket
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncSession)
 from core.security import decode_access_token
+from schemas.tasks import (
+    TaskCreate,
+    TaskType)
 from workers.manager import run_rt_task
+from controllers.tasks import (
+    create_rt_task,
+    finish_rt_task)
 
 RATE = 1/25
+
+async_session: async_sessionmaker[AsyncSession] = None
 
 
 def array_resize_to_base64(img_array) -> str:
@@ -31,6 +43,15 @@ async def handle_rt(ws: WebSocket, access_token: str):
     while True:
         data_in = await ws.receive_text()
         if data_in == 'start':
+            await create_rt_task(
+                tid,
+                TaskCreate(
+                    name=tid.hex,
+                    m_name='default',
+                    task_type=TaskType.CAMERA,
+                    input_list=[]),
+                auth,
+                async_session)
             await ws.send_json({'tid': str(tid)})
             break
         await ws.send_json({'message': 'send start to begin'})
@@ -81,7 +102,7 @@ async def handle_rt(ws: WebSocket, access_token: str):
                 sleep(RATE - delta_time)
             last_time = current_time
 
-        sleep(1)
+        sleep(0.5)
         last_time = time()
         while not buffer_out.empty():
             print('tailing part')
@@ -107,8 +128,10 @@ async def handle_rt(ws: WebSocket, access_token: str):
 
         print('send end message')
         await ws.send_json({'end_message': end_msg})
+        await ws.close()
 
     except Exception as error:
         print(error, 'rt error')
     finally:
         flag.clear()
+        await finish_rt_task(tid, async_session)

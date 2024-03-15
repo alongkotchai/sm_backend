@@ -1,5 +1,7 @@
 import os
 import base64
+from uuid import UUID
+from datetime import datetime
 from threading import Event
 from queue import Queue
 from typing import Callable
@@ -31,7 +33,7 @@ def get_swine_lenght(swine_number, swine_length_vote):
     return swine_length
 
 
-def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
+def predict(qin: Queue, qout: Queue, qout_file: Queue, e: Event, ef: callable, tid: UUID):
     try:
         print(f'rt {tid} begin predict')
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -142,7 +144,15 @@ def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
                                 print(f'put 1 f {frame_count}')
                                 qout.put({
                                     'frame': False,
-                                    'swime_number': swine_pass_pointer,
+                                    'swine_number': swine_pass_pointer,
+                                    'length': length,
+                                    'image': swine_image[swine_pass_pointer]
+                                }, timeout=10)
+                                print('send to file queue')
+                                qout_file.put({
+                                    'tid': tid,
+                                    'swine_number': swine_pass_pointer,
+                                    'name': f'{swine_pass_pointer}-{datetime.now().isoformat()}',
                                     'length': length,
                                     'image': swine_image[swine_pass_pointer]
                                 }, timeout=10)
@@ -196,7 +206,15 @@ def predict(qin: Queue, qout: Queue, e: Event, ef: callable, tid: str):
 
                 qout.put({
                     'frame': False,
-                    'swime_number': i,
+                    'swine_number': i,
+                    'length': length,
+                    'image': swine_image[i]
+                }, timeout=10)
+                print('send to file queue')
+                qout_file.put({
+                    'tid': tid,
+                    'swine_number': i,
+                    'name': f'{i}-{datetime.now().isoformat()}',
                     'length': length,
                     'image': swine_image[i]
                 }, timeout=10)

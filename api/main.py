@@ -49,6 +49,7 @@ async def setup_db() -> None:
         await conn.run_sync(models.Base.metadata.create_all)
     engine.async_session = async_session
     engine.engine = async_eng
+    rt.async_session = async_session
     await engine.ping_db(async_session)
     logger.info("Successfully connect to MySql database")
 
@@ -210,8 +211,7 @@ def main() -> None:
     # start serving
     uvicorn.run(app,
                 host=str(setting.SERVICE_HOST),
-                port=setting.SERVICE_PORT,
-                log_config="./static/logs/log_conf.yml")
+                port=setting.SERVICE_PORT)
 
 
 if __name__ == "__main__":

@@ -10,8 +10,10 @@ from core.config import setting
 from database import engine
 from workers.worker import work
 from workers.rt_worker import predict
+from workers.repo_worker import repo_work
 
 __task_queue: Queue = Queue()
+__repo_queue: Queue = Queue()
 __worker_event: list[Event] = []
 __worker_list: list[Thread] = []
 __session_list: list = []
@@ -21,6 +23,10 @@ __rt_set_lock: Lock = Lock()
 
 def __wrapper(wid: int, q: Queue, e: Event, async_session):
     asyncio.run(work(wid, q, e, async_session))
+
+
+def __wrapper_repo(q: Queue, e: Event, async_session):
+    asyncio.run(repo_work(q, e, async_session))
 
 
 def get_status() -> tuple[int, int]:
@@ -77,8 +83,22 @@ async def init_worker(dsn):
         __worker_list.append(thread)
         thread.start()
 
+    # repo worker
+    async_eng, async_session = await engine.init_engine(dsn)
+    __session_list.append(async_eng)
+    event = Event()
+    thread = Thread(
+        target=__wrapper_repo,
+        args=(__repo_queue, event, async_session))
+    event.set()
+    __worker_event.append(event)
+    __worker_list.append(thread)
+    thread.start()
+
 
 async def close_all():
+    __repo_queue.put('q')
+
     for worker in __worker_event:
         worker.clear()
     for thread in __worker_list:
@@ -100,7 +120,7 @@ async def run_rt_task(tid: UUID, qin: Queue, qout: Queue, e: Event):
     e.set()
     thread = Thread(
         target=predict,
-        args=(qin, qout, e, remove_rt, str(tid)))
+        args=(qin, qout, __repo_queue, e, remove_rt, tid))
     thread.start()
     print(f'task-rt:{str(tid)} start')
     add_rt(tid, e)
